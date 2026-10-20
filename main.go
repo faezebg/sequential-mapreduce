@@ -4,10 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+
+	"example.com/sequential-mapreduce/mapreduce"
 )
 
 func main() {
-	// Number of Reduce partitions
 	nReduce := flag.Int(
 		"reducers",
 		3,
@@ -24,10 +25,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Read input filenames from command line
 	inputFiles := flag.Args()
 
-	// Use default files if no filenames are provided
 	if len(inputFiles) == 0 {
 		inputFiles = []string{
 			"input1.txt",
@@ -38,10 +37,37 @@ func main() {
 		}
 	}
 
-	fmt.Printf("Reduce partitions: %d\n", *nReduce)
-	fmt.Printf("Input files (%d):\n", len(inputFiles))
+	fmt.Printf(
+		"Reduce partitions (for later steps): %d\n",
+		*nReduce,
+	)
 
-	for _, filename := range inputFiles {
-		fmt.Println(" -", filename)
+	fmt.Printf(
+		"Starting %d map workers...\n",
+		len(inputFiles),
+	)
+
+	// Start concurrent Map workers
+	pairs, errs := mapreduce.StartMapWorkers(inputFiles)
+
+	// Consume intermediate pairs
+	pairCount := 0
+
+	for range pairs {
+		pairCount++
 	}
+
+	// Report file errors
+	for err := range errs {
+		fmt.Fprintln(os.Stderr, "map error:", err)
+	}
+
+	fmt.Printf(
+		"Intermediate pairs generated: %d\n",
+		pairCount,
+	)
+
+	fmt.Println(
+		"Map phase complete; Shuffle and Reduce are next.",
+	)
 }
