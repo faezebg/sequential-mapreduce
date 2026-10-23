@@ -52,52 +52,65 @@ func main() {
 		*nReduce,
 	)
 
+	// Phase 3: Shuffle / Group
+	groups := mapreduce.ShufflePartitions(partitions)
+
 	// Temporary consumers.
-	// Shuffle/Group will replace these later.
-	counts := make([]int, len(partitions))
+	// Reduce workers will replace these later.
+	pairCounts := make([]int, len(groups))
+	groupCounts := make([]int, len(groups))
 
 	var wg sync.WaitGroup
 
-	for i, partition := range partitions {
+	for i, groupChannel := range groups {
 		wg.Add(1)
 
 		go func(
 			index int,
-			channel <-chan mapreduce.KeyValue,
+			channel <-chan mapreduce.Group,
 		) {
 			defer wg.Done()
 
-			for range channel {
-				counts[index]++
+			for group := range channel {
+				groupCounts[index]++
+				pairCounts[index] += len(group.Values)
 			}
-		}(i, partition)
+		}(i, groupChannel)
 	}
 
-	// Wait for all partition consumers.
 	wg.Wait()
 
-	total := 0
+	totalPairs := 0
+	totalGroups := 0
 
-	for i, count := range counts {
+	for i := range groups {
 		fmt.Printf(
-			"Partition %d: %d pairs\n",
+			"Partition %d: %d pairs, %d groups\n",
 			i,
-			count,
+			pairCounts[i],
+			groupCounts[i],
 		)
-		total += count
+
+		totalPairs += pairCounts[i]
+		totalGroups += groupCounts[i]
 	}
 
-	// Report any Map errors.
+	// Report Map errors.
 	for err := range errs {
 		fmt.Fprintln(os.Stderr, "map error:", err)
 	}
 
 	fmt.Printf(
 		"Total intermediate pairs: %d\n",
-		total,
+		totalPairs,
+	)
+
+	fmt.Printf(
+		"Total unique words: %d\n",
+		totalGroups,
 	)
 
 	fmt.Println(
-		"Partition phase complete; Shuffle and Reduce are next.",
+		"Shuffle/Group complete; Reduce is next.",
 	)
 }

@@ -11,3 +11,8 @@ type Result struct {
 	Word  string
 	Count int
 }
+
+type Group struct {
+	Key    string
+	Values []string
+}
