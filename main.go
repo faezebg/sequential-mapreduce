@@ -56,27 +56,30 @@ func main() {
 	groups := mapreduce.ShufflePartitions(partitions)
 
 	// Phase 4: Reduce
-	results := mapreduce.StartReduceWorkers(groups)
+	outcomes := mapreduce.StartReduceWorkers(groups)
 
-	// Consume reducer results.
-	uniqueWords := 0
+	// Collect all reducer results.
+	results := make([]mapreduce.Result, 0)
+
 	totalOccurrences := 0
+	reduceFailed := false
 
-	for outcome := range results {
+	for outcome := range outcomes {
 		if outcome.Err != nil {
 			fmt.Fprintln(
 				os.Stderr,
 				"reduce error:",
 				outcome.Err,
 			)
+			reduceFailed = true
 			continue
 		}
 
-		uniqueWords++
+		results = append(results, outcome.Result)
 		totalOccurrences += outcome.Result.Count
 	}
 
-	// Report file errors.
+	// Report input file errors.
 	for err := range errs {
 		fmt.Fprintln(
 			os.Stderr,
@@ -85,9 +88,26 @@ func main() {
 		)
 	}
 
+	if reduceFailed {
+		fmt.Fprintln(
+			os.Stderr,
+			"output not written because Reduce failed",
+		)
+		os.Exit(1)
+	}
+
+	// Phase 5: Sort and write output.
+	if err := mapreduce.WriteOutput(
+		"output.txt",
+		results,
+	); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
 	fmt.Printf(
 		"Total unique words: %d\n",
-		uniqueWords,
+		len(results),
 	)
 
 	fmt.Printf(
@@ -95,7 +115,5 @@ func main() {
 		totalOccurrences,
 	)
 
-	fmt.Println(
-		"Reduce phase complete; sorted output.txt is next.",
-	)
+	fmt.Println("Results saved to output.txt")
 }
