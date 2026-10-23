@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"sync"
 
 	"example.com/sequential-mapreduce/mapreduce"
 )
@@ -39,8 +38,9 @@ func main() {
 	}
 
 	fmt.Printf(
-		"Starting %d Map workers...\n",
+		"Starting %d Map workers and %d Reduce workers...\n",
 		len(inputFiles),
+		*nReduce,
 	)
 
 	// Phase 1: Map
@@ -55,62 +55,47 @@ func main() {
 	// Phase 3: Shuffle / Group
 	groups := mapreduce.ShufflePartitions(partitions)
 
-	// Temporary consumers.
-	// Reduce workers will replace these later.
-	pairCounts := make([]int, len(groups))
-	groupCounts := make([]int, len(groups))
+	// Phase 4: Reduce
+	results := mapreduce.StartReduceWorkers(groups)
 
-	var wg sync.WaitGroup
+	// Consume reducer results.
+	uniqueWords := 0
+	totalOccurrences := 0
 
-	for i, groupChannel := range groups {
-		wg.Add(1)
+	for outcome := range results {
+		if outcome.Err != nil {
+			fmt.Fprintln(
+				os.Stderr,
+				"reduce error:",
+				outcome.Err,
+			)
+			continue
+		}
 
-		go func(
-			index int,
-			channel <-chan mapreduce.Group,
-		) {
-			defer wg.Done()
-
-			for group := range channel {
-				groupCounts[index]++
-				pairCounts[index] += len(group.Values)
-			}
-		}(i, groupChannel)
+		uniqueWords++
+		totalOccurrences += outcome.Result.Count
 	}
 
-	wg.Wait()
-
-	totalPairs := 0
-	totalGroups := 0
-
-	for i := range groups {
-		fmt.Printf(
-			"Partition %d: %d pairs, %d groups\n",
-			i,
-			pairCounts[i],
-			groupCounts[i],
-		)
-
-		totalPairs += pairCounts[i]
-		totalGroups += groupCounts[i]
-	}
-
-	// Report Map errors.
+	// Report file errors.
 	for err := range errs {
-		fmt.Fprintln(os.Stderr, "map error:", err)
+		fmt.Fprintln(
+			os.Stderr,
+			"map error:",
+			err,
+		)
 	}
-
-	fmt.Printf(
-		"Total intermediate pairs: %d\n",
-		totalPairs,
-	)
 
 	fmt.Printf(
 		"Total unique words: %d\n",
-		totalGroups,
+		uniqueWords,
+	)
+
+	fmt.Printf(
+		"Total word occurrences: %d\n",
+		totalOccurrences,
 	)
 
 	fmt.Println(
-		"Shuffle/Group complete; Reduce is next.",
+		"Reduce phase complete; sorted output.txt is next.",
 	)
 }
