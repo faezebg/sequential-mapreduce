@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sync"
 
 	"example.com/sequential-mapreduce/mapreduce"
 )
@@ -38,36 +39,65 @@ func main() {
 	}
 
 	fmt.Printf(
-		"Reduce partitions (for later steps): %d\n",
-		*nReduce,
-	)
-
-	fmt.Printf(
-		"Starting %d map workers...\n",
+		"Starting %d Map workers...\n",
 		len(inputFiles),
 	)
 
-	// Start concurrent Map workers
+	// Phase 1: Map
 	pairs, errs := mapreduce.StartMapWorkers(inputFiles)
 
-	// Consume intermediate pairs
-	pairCount := 0
+	// Phase 2: Partition
+	partitions := mapreduce.PartitionPairs(
+		pairs,
+		*nReduce,
+	)
 
-	for range pairs {
-		pairCount++
+	// Temporary consumers.
+	// Shuffle/Group will replace these later.
+	counts := make([]int, len(partitions))
+
+	var wg sync.WaitGroup
+
+	for i, partition := range partitions {
+		wg.Add(1)
+
+		go func(
+			index int,
+			channel <-chan mapreduce.KeyValue,
+		) {
+			defer wg.Done()
+
+			for range channel {
+				counts[index]++
+			}
+		}(i, partition)
 	}
 
-	// Report file errors
+	// Wait for all partition consumers.
+	wg.Wait()
+
+	total := 0
+
+	for i, count := range counts {
+		fmt.Printf(
+			"Partition %d: %d pairs\n",
+			i,
+			count,
+		)
+		total += count
+	}
+
+	// Report any Map errors.
 	for err := range errs {
 		fmt.Fprintln(os.Stderr, "map error:", err)
 	}
 
 	fmt.Printf(
-		"Intermediate pairs generated: %d\n",
-		pairCount,
+		"Total intermediate pairs: %d\n",
+		total,
 	)
 
 	fmt.Println(
-		"Map phase complete; Shuffle and Reduce are next.",
+		"Partition phase complete; Shuffle and Reduce are next.",
 	)
 }
