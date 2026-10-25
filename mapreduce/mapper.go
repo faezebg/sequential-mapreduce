@@ -8,44 +8,30 @@ import (
 	"unicode"
 )
 
-// Map converts text into intermediate key-value pairs.
 func Map(text string, out chan<- KeyValue) {
-	words := strings.FieldsFunc(
-		strings.ToLower(text),
-		func(r rune) bool {
-			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-		},
-	)
-
+	words := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
 	for _, word := range words {
-		out <- KeyValue{
-			Key:   word,
-			Value: "1",
-		}
+		out <- KeyValue{Key: word, Value: "1"}
 	}
 }
 
-// MapFile reads a file and calls the Map function.
 func MapFile(filename string, out chan<- KeyValue) error {
 	contents, err := os.ReadFile(filename)
 	if err != nil {
 		return fmt.Errorf("read %q: %w", filename, err)
 	}
-
 	Map(string(contents), out)
 	return nil
 }
 
-// StartMapWorkers creates one goroutine per file.
 func StartMapWorkers(files []string) (<-chan KeyValue, <-chan error) {
 	pairs := make(chan KeyValue, 256)
 	errs := make(chan error, len(files))
-
 	var wg sync.WaitGroup
-
 	for _, file := range files {
 		wg.Add(1)
-
 		go func(filename string) {
 			defer wg.Done()
 
@@ -54,7 +40,6 @@ func StartMapWorkers(files []string) (<-chan KeyValue, <-chan error) {
 			}
 		}(file)
 	}
-
 	go func() {
 		wg.Wait()
 		close(pairs)

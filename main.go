@@ -9,24 +9,13 @@ import (
 )
 
 func main() {
-	nReduce := flag.Int(
-		"reducers",
-		3,
-		"number of reduce partitions",
-	)
-
+	nReduce := flag.Int("reducers", 3, "number of reduce partitions")
 	flag.Parse()
-
 	if *nReduce <= 0 {
-		fmt.Fprintln(
-			os.Stderr,
-			"error: -reducers must be greater than zero",
-		)
+		fmt.Fprintln(os.Stderr, "error: -reducers must be greater than zero")
 		os.Exit(1)
 	}
-
 	inputFiles := flag.Args()
-
 	if len(inputFiles) == 0 {
 		inputFiles = []string{
 			"input1.txt",
@@ -36,41 +25,20 @@ func main() {
 			"input5.txt",
 		}
 	}
+	fmt.Printf("Starting %d Map workers and %d Reduce workers...\n",
+		len(inputFiles), *nReduce)
 
-	fmt.Printf(
-		"Starting %d Map workers and %d Reduce workers...\n",
-		len(inputFiles),
-		*nReduce,
-	)
-
-	// Phase 1: Map
 	pairs, errs := mapreduce.StartMapWorkers(inputFiles)
-
-	// Phase 2: Partition
-	partitions := mapreduce.PartitionPairs(
-		pairs,
-		*nReduce,
-	)
-
-	// Phase 3: Shuffle / Group
+	partitions := mapreduce.PartitionPairs(pairs, *nReduce)
 	groups := mapreduce.ShufflePartitions(partitions)
-
-	// Phase 4: Reduce
 	outcomes := mapreduce.StartReduceWorkers(groups)
 
-	// Collect all reducer results.
-	results := make([]mapreduce.Result, 0)
-
+	var results []mapreduce.Result
 	totalOccurrences := 0
 	reduceFailed := false
-
 	for outcome := range outcomes {
 		if outcome.Err != nil {
-			fmt.Fprintln(
-				os.Stderr,
-				"reduce error:",
-				outcome.Err,
-			)
+			fmt.Fprintln(os.Stderr, "reduce error:", outcome.Err)
 			reduceFailed = true
 			continue
 		}
@@ -79,41 +47,19 @@ func main() {
 		totalOccurrences += outcome.Result.Count
 	}
 
-	// Report input file errors.
 	for err := range errs {
-		fmt.Fprintln(
-			os.Stderr,
-			"map error:",
-			err,
-		)
+		fmt.Fprintln(os.Stderr, "map error:", err)
 	}
-
 	if reduceFailed {
-		fmt.Fprintln(
-			os.Stderr,
-			"output not written because Reduce failed",
-		)
+		fmt.Fprintln(os.Stderr, "output not written because Reduce failed")
 		os.Exit(1)
 	}
-
-	// Phase 5: Sort and write output.
-	if err := mapreduce.WriteOutput(
-		"output.txt",
-		results,
-	); err != nil {
+	err := mapreduce.WriteOutput("output.txt", results)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-
-	fmt.Printf(
-		"Total unique words: %d\n",
-		len(results),
-	)
-
-	fmt.Printf(
-		"Total word occurrences: %d\n",
-		totalOccurrences,
-	)
-
+	fmt.Printf("Total unique words: %d\n", len(results))
+	fmt.Printf("Total word occurrences: %d\n", totalOccurrences)
 	fmt.Println("Results saved to output.txt")
 }
